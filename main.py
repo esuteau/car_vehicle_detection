@@ -474,9 +474,9 @@ if __name__ == "__main__":
 
         # Parameters for Vehicle detection
         p.x_start_stop=[None, None]
-        p.y_start_stop = [400, 656] # Min and max in y to search in slide_window()
-        p.xy_windows = [(256, 256), (128, 128), (64, 64)]
-        p.xy_overlap=(0.5, 0.5)
+        p.xy_windows =      [(256, 256), (128, 128), (64, 64)]
+        p.y_start_stops =   [(400, 656), (400, 594), (400, 528)] # Min and max in y to search in slide_window()
+        p.xy_overlap=(0.9, 0.9)
         p.color = (0, 0, 255)
         p.thick = 3
         p.heat_threash = 3
@@ -489,9 +489,9 @@ if __name__ == "__main__":
         pickle.dump(p, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     # DEBUG: Overwrite some parameters for testing
-    p.heat_threash = 5
-    p.y_start_stop = [400, 656] # Min and max in y to search in slide_window()
-    p.xy_windows = [(256, 256), (128, 128), (64, 64)]
+    p.heat_threash = 15
+    p.xy_windows =      [(256, 256), (128, 128), (64, 64)]
+    p.y_start_stops =   [(400, 656), (400, 594), (400, 528)] # Min and max in y to search in slide_window()
     p.xy_overlap=(0.9, 0.9)
 
     # Load test images
@@ -512,8 +512,9 @@ if __name__ == "__main__":
 
         # Find all windows to process
         windows = []
-        for xy_window in p.xy_windows:
-            windows.extend(slide_window(image, x_start_stop=p.x_start_stop, y_start_stop=p.y_start_stop, 
+        for idx, xy_window in enumerate(p.xy_windows):
+            y_start_stop = p.y_start_stops[idx]
+            windows.extend(slide_window(image, x_start_stop=p.x_start_stop, y_start_stop=y_start_stop, 
                                 xy_window=xy_window, xy_overlap=p.xy_overlap))
 
         # Run windows through classifier
