@@ -220,7 +220,9 @@ def run_classifier(p):
     print('Input Dataset: {} vehicle images and {} non-vehicle images loaded'.format(len(cars), len(notcars)))
 
     # Reduce the sample size because HOG features are slow to compute
-    cars, notcars = cars[0:p.sample_size], notcars[0:p.sample_size]
+    max_sample_size = min(len(cars), len(notcars))
+    sample_size = min(p.sample_size, max_sample_size)
+    cars, notcars = cars[0:sample_size], notcars[0:sample_size]
     print('Subset selected: {} vehicles images and {} non-vehicles images'.format(len(cars), len(notcars)))
 
     # Run Feature Extraction
@@ -342,63 +344,72 @@ def search_windows(img, windows, clf, scaler, color_space='RGB',
     return on_windows
 
 # Define a single function that can extract features using hog sub-sampling and make predictions
-def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins):
+def find_cars(img, p, scale):
+    """Compute HOG feature on the whole image, extract the different patches and compute predictions.
+    Return a list of rectangle that have been predicted as matching a vehicle"""
     
     draw_img = np.copy(img)
-    img = img.astype(np.float32)/255
+
+    if p.is_input_jpg:
+        img = img.astype(np.float32)/255
     
-    img_tosearch = img[ystart:ystop,:,:]
+    # Extract only section to process
+    img_tosearch = img[p.ystart:p.ystop,p.xstart:p.xstop,:]
+
+    # Convert and Rescale
     ctrans_tosearch = convert_color(img_tosearch, conv='RGB2YCrCb')
     if scale != 1:
         imshape = ctrans_tosearch.shape
         ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1]/scale), np.int(imshape[0]/scale)))
         
+    # Extract Color Channels
     ch1 = ctrans_tosearch[:,:,0]
     ch2 = ctrans_tosearch[:,:,1]
     ch3 = ctrans_tosearch[:,:,2]
 
     # Define blocks and steps as above
-    nxblocks = (ch1.shape[1] // pix_per_cell) - cell_per_block + 1
-    nyblocks = (ch1.shape[0] // pix_per_cell) - cell_per_block + 1 
-    nfeat_per_block = orient*cell_per_block**2
+    nxblocks = (ch1.shape[1] // p.pix_per_cell) - p.cell_per_block + 1
+    nyblocks = (ch1.shape[0] // p.pix_per_cell) - p.cell_per_block + 1 
+    nfeat_per_block = p.orient*p.cell_per_block**2
     
     # 64 was the orginal sampling rate, with 8 cells and 8 pix per cell
     window = 64
-    nblocks_per_window = (window // pix_per_cell) - cell_per_block + 1
+    nblocks_per_window = (window // p.pix_per_cell) - p.cell_per_block + 1
     cells_per_step = 2  # Instead of overlap, define how many cells to step
     nxsteps = (nxblocks - nblocks_per_window) // cells_per_step
     nysteps = (nyblocks - nblocks_per_window) // cells_per_step
     
     # Compute individual channel HOG features for the entire image
-    hog1 = get_hog_features(ch1, orient, pix_per_cell, cell_per_block, feature_vec=False)
-    hog2 = get_hog_features(ch2, orient, pix_per_cell, cell_per_block, feature_vec=False)
-    hog3 = get_hog_features(ch3, orient, pix_per_cell, cell_per_block, feature_vec=False)
+    hog1 = get_hog_features(ch1, p.orient, p.pix_per_cell, p.cell_per_block, feature_vec=False)
+    hog2 = get_hog_features(ch2, p.orient, p.pix_per_cell, p.cell_per_block, feature_vec=False)
+    hog3 = get_hog_features(ch3, p.orient, p.pix_per_cell, p.cell_per_block, feature_vec=False)
     
     for xb in range(nxsteps):
         for yb in range(nysteps):
             ypos = yb*cells_per_step
             xpos = xb*cells_per_step
+
             # Extract HOG for this patch
             hog_feat1 = hog1[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
             hog_feat2 = hog2[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
             hog_feat3 = hog3[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel() 
             hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
 
-            xleft = xpos*pix_per_cell
-            ytop = ypos*pix_per_cell
+            xleft = xpos * p.pix_per_cell
+            ytop = ypos * p.pix_per_cell
 
             # Extract the image patch
             subimg = cv2.resize(ctrans_tosearch[ytop:ytop+window, xleft:xleft+window], (64,64))
           
             # Get color features
-            spatial_features = bin_spatial(subimg, size=spatial_size)
-            hist_features = color_hist(subimg, nbins=hist_bins)
+            spatial_features = bin_spatial(subimg, size=p.spatial_size)
+            hist_features = color_hist(subimg, nbins=p.hist_bins)
 
             # Scale features and make a prediction
             test_features = X_scaler.transform(np.hstack((spatial_features, hist_features, hog_features)).reshape(1, -1))    
-            #test_features = X_scaler.transform(np.hstack((shape_feat, hist_feat)).reshape(1, -1))    
             test_prediction = svc.predict(test_features)
             
+            # If the input patch has been predicted as a car, draw it
             if test_prediction == 1:
                 xbox_left = np.int(xleft*scale)
                 ytop_draw = np.int(ytop*scale)
@@ -439,16 +450,85 @@ def draw_labeled_bboxes(img, labels, color, thickness):
     # Return the image
     return img
 
-if __name__ == "__main__":
+def create_folder(folder_path):
+    if not os.path.exists(folder_path):
+        os.mkdir(folder_path)
 
-    print('\n----------------------------------------------')
-    print('Udacity Self Driving Nano-degree')
-    print('Project 5: Vehicle Detection')
-    print('Author: Erwan Suteau')
-    print('----------------------------------------------')
+
+
+def process_image(image, p):
+
+    start = time.time()
+
+    draw_image = np.copy(image)
+    window_img = np.copy(image)
+
+    # Training was extracted data from .png images (scaled 0 to 1 by mpimg)
+    # If the image being searched is jpg (scaled 0 to 255 with mpimg), then we need to rescale it to (0, 1)
+    if p.is_input_jpg:
+        image = image.astype(np.float32)/255
+
+    # Find all windows to process
+    windows = []
+    for idx, xy_window in enumerate(p.xy_windows):
+        y_start_stop = p.y_start_stops[idx]
+        windows.extend(slide_window(image, x_start_stop=p.x_start_stop, y_start_stop=y_start_stop, 
+                            xy_window=xy_window, xy_overlap=p.xy_overlap))
+
+    # Run windows through classifier
+    hot_windows = search_windows(image, windows, p.svc, p.X_scaler, color_space=p.color_space, 
+                            spatial_size=p.spatial_size, hist_bins=p.hist_bins, 
+                            orient=p.orient, pix_per_cell=p.pix_per_cell, 
+                            cell_per_block=p.cell_per_block, 
+                            hog_channel=p.hog_channel, spatial_feat=p.spatial_feat, 
+                            hist_feat=p.hist_feat, hog_feat=p.hog_feat)                       
+
+    window_img = draw_boxes(window_img, hot_windows, color=p.color, thick=p.thick)
+
+    # Create Heat Map
+    heat = np.zeros_like(image[:,:,0]).astype(np.float)
+    heat = add_heat(heat,hot_windows)
+
+    # Apply threshold to help remove false positives
+    heat = apply_threshold(heat, p.heat_threash)
+    print("Max Heat: {}".format(np.max(heat[:])))
+
+    # Visualize the heatmap when displaying    
+    heatmap = np.clip(heat, 0, 255)
+
+    # Find final boxes from heatmap using label function
+    labels = label(heatmap)
+    draw_img = draw_labeled_bboxes(draw_image, labels, color=p.color, thickness=p.thick)
+
+    elapsed_time = time.time() - start
+    print("Processing time: {:.1f} s".format(elapsed_time))
+
+    return (draw_img, heatmap, window_img)
+
+def save_images(draw_img, heatmap, window_img, output_folder, filename):
+    # Save Images to file
+    window_img_bgr = cv2.cvtColor(window_img, cv2.COLOR_RGB2BGR)
+    draw_img_bgr = cv2.cvtColor(draw_img, cv2.COLOR_RGB2BGR)
+
+    out_folder = output_folder + '/window/'
+    create_folder(out_folder)
+    cv2.imwrite(out_folder + filename, window_img_bgr)
+
+    out_folder = output_folder + '/draw/'
+    create_folder(out_folder)
+    cv2.imwrite(out_folder + filename, draw_img_bgr)
+
+    out_folder = output_folder + '/heatmap/'
+    create_folder(out_folder)
+    cv2.imwrite(out_folder + filename, heatmap)
+
+
+def run_test_image_pipeline():
 
     pickle_file = 'parameters.pickle'
+    output_folder = 'output_images/'
     force_overwrite = False
+    debug_plot = False
 
     if os.path.exists(pickle_file) and not force_overwrite:
         print("Reloading parameters and trained classifier from {}".format(pickle_file))
@@ -479,7 +559,8 @@ if __name__ == "__main__":
         p.xy_overlap=(0.9, 0.9)
         p.color = (0, 0, 255)
         p.thick = 3
-        p.heat_threash = 3
+        p.heat_threash = 15
+        p.is_input_jpg = True
 
         # Train a classifier on labels images.
         (p.svc, p.X_scaler) = run_classifier(p)
@@ -488,12 +569,6 @@ if __name__ == "__main__":
     with open(pickle_file, 'wb') as handle:
         pickle.dump(p, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    # DEBUG: Overwrite some parameters for testing
-    p.heat_threash = 15
-    p.xy_windows =      [(256, 256), (128, 128), (64, 64)]
-    p.y_start_stops =   [(400, 656), (400, 594), (400, 528)] # Min and max in y to search in slide_window()
-    p.xy_overlap=(0.9, 0.9)
-
     # Load test images
     images_format = 'test_images/*.jpg'
     images = glob.glob(images_format)
@@ -501,57 +576,124 @@ if __name__ == "__main__":
 
     for idx, image_file in enumerate(images):
 
+        # Read Image
         image = mpimg.imread(image_file)
-        draw_image = np.copy(image)
+        
+        # Process Image
+        (draw_img, heatmap, window_img) = process_image(image, p)
 
-        # Training was extracted data from .png images (scaled 0 to 1 by mpimg)
-        # If the image being searched is jpg (scaled 0 to 255 with mpimg), then we need to rescale it to (0, 1)
-        if 'jpg' in os.path.splitext(image_file)[1]:
-            image = image.astype(np.float32)/255
+        # Save Images to file
+        filename = os.path.basename(image_file)
+        save_images(draw_img, heatmap, window_img, output_folder, filename)
+
+        # Debug Plot
+        if debug_plot:
+            fig = plt.figure()
+            plt.subplot(131)
+            plt.imshow(window_img)
+            plt.title('Boxes')
+            plt.subplot(132)
+            plt.imshow(draw_img)
+            plt.title('Car Positions')
+            plt.subplot(133)
+            plt.imshow(heatmap, cmap='hot')
+            plt.title('Heat Map')
+            fig.tight_layout()
+
+            plt.show()
 
 
-        # Find all windows to process
-        windows = []
-        for idx, xy_window in enumerate(p.xy_windows):
-            y_start_stop = p.y_start_stops[idx]
-            windows.extend(slide_window(image, x_start_stop=p.x_start_stop, y_start_stop=y_start_stop, 
-                                xy_window=xy_window, xy_overlap=p.xy_overlap))
+def run_video_pipeline():
+    from moviepy.editor import VideoFileClip, ImageSequenceClip
 
-        # Run windows through classifier
-        hot_windows = search_windows(image, windows, p.svc, p.X_scaler, color_space=p.color_space, 
-                                spatial_size=p.spatial_size, hist_bins=p.hist_bins, 
-                                orient=p.orient, pix_per_cell=p.pix_per_cell, 
-                                cell_per_block=p.cell_per_block, 
-                                hog_channel=p.hog_channel, spatial_feat=p.spatial_feat, 
-                                hist_feat=p.hist_feat, hog_feat=p.hog_feat)                       
+    # Define input/output files
+    input_video = 'project_video.mp4'
+    create_folder('output_images/video/')
+    output_dir = 'output_images/video/' + time.strftime("%Y%m%d_%H%M%S") + '/'
+    create_folder(output_dir)
+    output_video = output_dir + 'output_video.mp4'
 
-        window_img = draw_boxes(draw_image, hot_windows, color=p.color, thick=p.thick)
+    pickle_file = 'parameters.pickle'
+    force_overwrite = False
+    debug_plot = False
 
-        # Create Heat Map
-        heat = np.zeros_like(image[:,:,0]).astype(np.float)
-        heat = add_heat(heat,hot_windows)
+    if os.path.exists(pickle_file) and not force_overwrite:
+        print("Reloading parameters and trained classifier from {}".format(pickle_file))
+        with open(pickle_file, 'rb') as handle:
+            p = pickle.load(handle)
 
-        # Apply threshold to help remove false positives
-        heat = apply_threshold(heat, p.heat_threash)
-        print("Max Heat: {}".format(np.max(heat[:])))
+    else:
+        # Input parameters
+        p = Parameters()
+        p.color_space = 'RGB' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
+        p.orient = 9
+        p.pix_per_cell = 8
+        p.cell_per_block = 2
+        p.hog_channel = 0 # Can be 0, 1, 2, or "ALL"
+        p.sample_size = 1000000
+        p.spatial_size = (32, 32) # Spatial binning dimensions
+        p.hist_bins = 32    # Number of histogram bins
+        p.spatial_feat = True # Spatial features on or off
+        p.hist_feat = True # Histogram features on or off
+        p.hog_feat = True # HOG features on or off
+        p.seed = np.random.randint(0, 100)
+        p.seed = 1
 
-        # Visualize the heatmap when displaying    
-        heatmap = np.clip(heat, 0, 255)
+        # Parameters for Vehicle detection
+        p.x_start_stop=[None, None]
+        p.xy_windows =      [(256, 256), (128, 128), (64, 64)]
+        p.y_start_stops =   [(400, 656), (400, 594), (400, 528)] # Min and max in y to search in slide_window()
+        p.xy_overlap=(0.9, 0.9)
+        p.color = (0, 0, 255)
+        p.thick = 3
+        p.heat_threash = 15
+        p.is_input_jpg = True
 
-        # Find final boxes from heatmap using label function
-        labels = label(heatmap)
-        draw_img = draw_labeled_bboxes(np.copy(image), labels, color=p.color, thickness=p.thick)
+        # Train a classifier on labels images.
+        (p.svc, p.X_scaler) = run_classifier(p)
 
-        fig = plt.figure()
-        plt.subplot(131)
-        plt.imshow(window_img)
-        plt.title('Boxes')
-        plt.subplot(132)
-        plt.imshow(draw_img)
-        plt.title('Car Positions')
-        plt.subplot(133)
-        plt.imshow(heatmap, cmap='hot')
-        plt.title('Heat Map')
-        fig.tight_layout()
+    # Save to file (So that we don't have to train every single time)
+    with open(pickle_file, 'wb') as handle:
+        pickle.dump(p, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-        plt.show()
+    # Load Video
+    in_clip = VideoFileClip(input_video)
+    nb_frames = int(in_clip.duration * in_clip.fps)
+    out_images = []
+    for idx, frame in enumerate(in_clip.iter_frames()):
+
+        filename = 'frame_{}.jpg'.format(idx)
+        # Save Input Frame for debugging
+        output_file = 'output_images/video/project_video_images/' + filename
+        cv2.imwrite(output_file, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+
+        # Process Image
+        prog_percent = 100 * (idx+1) / nb_frames
+        print("Processing Frame {}/{} {:.1f}%".format(idx+1, nb_frames, prog_percent))
+        (draw_img, heatmap, window_img) = process_image(frame, p)
+
+        # Save Images to file
+        save_images(draw_img, heatmap, window_img, output_dir, filename)
+
+        # Save Output frame
+        output_file = output_dir + filename
+        cv2.imwrite(output_file, cv2.cvtColor(draw_img, cv2.COLOR_RGB2BGR))
+
+        # Store output file
+        out_images.append(output_file)
+
+    # Make a clip
+    print("Writing output video at {}".format(output_video))
+    out_clip = ImageSequenceClip(out_images, fps=24)
+    out_clip.write_videofile(output_video, audio=False)
+
+if __name__ == "__main__":
+
+    print('\n----------------------------------------------')
+    print('Udacity Self Driving Nano-degree')
+    print('Project 5: Vehicle Detection')
+    print('Author: Erwan Suteau')
+    print('----------------------------------------------')
+
+    #run_test_image_pipeline()
+    run_video_pipeline()
