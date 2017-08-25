@@ -7,19 +7,22 @@
 # - Implement Sliding Window Technique and search for image vehicles
 # - Run the pipeline on the video stream
 
+import glob
+import os
+import pickle
+import time
+
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
-import cv2
-import glob
-import time
-import os
-import pickle
-from sklearn.svm import LinearSVC
-from sklearn.preprocessing import StandardScaler
+from scipy.ndimage.measurements import label
 from skimage.feature import hog
 from sklearn.model_selection import train_test_split
-from scipy.ndimage.measurements import label
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import LinearSVC
+
+import cv2
+
 
 def get_hog_features(img, orient, pix_per_cell, cell_per_block, vis=False, feature_vec=True):
     """Computes the HOG features on the input image"""
@@ -82,7 +85,7 @@ def single_img_features(img, color_space='RGB', spatial_size=(32, 32),
     img_features = []
 
     # Apply color conversion if other than 'RGB'
-    feature_image = convert_color(img, color_space)
+    feature_image = convert_color(img, origin='RGB', destination=color_space)
 
     # Compute spatial features if flag is set
     if spatial_feat == True:
@@ -210,6 +213,11 @@ def run_classifier(p):
     (cars, notcars) = get_labels_images()
     print('Input Dataset: {} vehicle images and {} non-vehicle images loaded'.format(len(cars), len(notcars)))
 
+    # Shuffle datasets
+    np.random.seed(p.seed)
+    np.random.shuffle(cars)
+    np.random.shuffle(notcars)
+
     # Reduce the sample size because HOG features are slow to compute
     max_sample_size = min(len(cars), len(notcars))
     sample_size = min(p.sample_size, max_sample_size)
@@ -334,20 +342,34 @@ def search_windows(img, windows, clf, scaler, color_space='RGB',
     # Return windows for positive detections
     return on_windows
 
-def convert_color(img, color_space='RGB'):
-    if color_space != 'RGB':
-        if color_space == 'HSV':
+def convert_color(img, origin='RGB', destination='RGB'):
+    if origin == destination:
+        return np.copy(img)
+
+    if origin == 'RGB':
+        if destination == 'HSV':
             feature_image = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
-        elif color_space == 'LUV':
+        elif destination == 'LUV':
             feature_image = cv2.cvtColor(img, cv2.COLOR_RGB2LUV)
-        elif color_space == 'HLS':
+        elif destination == 'HLS':
             feature_image = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
-        elif color_space == 'YUV':
+        elif destination == 'YUV':
             feature_image = cv2.cvtColor(img, cv2.COLOR_RGB2YUV)
-        elif color_space == 'YCrCb':
+        elif destination == 'YCrCb':
             feature_image = cv2.cvtColor(img, cv2.COLOR_RGB2YCrCb)
+    elif origin == 'BGR':
+        if destination == 'HSV':
+            feature_image = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        elif destination == 'LUV':
+            feature_image = cv2.cvtColor(img, cv2.COLOR_BGR2LUV)
+        elif destination == 'HLS':
+            feature_image = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
+        elif destination == 'YUV':
+            feature_image = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
+        elif destination == 'YCrCb':
+            feature_image = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
     else:
-        feature_image = np.copy(img)      
+        raise Exception("Conversion not supported")
 
     return feature_image
 
@@ -378,7 +400,7 @@ def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, N
     img_tosearch = img[y_start_stop[0]:y_start_stop[1], x_start_stop[0]:x_start_stop[1], :]
 
     # Convert and Rescale
-    ctrans_tosearch = convert_color(img_tosearch, color_space=color_space)
+    ctrans_tosearch = convert_color(img_tosearch, origin='RGB', destination=color_space)
     if scale != 1:
         imshape = ctrans_tosearch.shape
         ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1]/scale), np.int(imshape[0]/scale)))
@@ -406,11 +428,14 @@ def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, N
     nysteps = (nyblocks - nyblocks_per_window) // cells_per_step
 
     if hog_channel == 'ALL':
+        t = time.time()
         hog1 = get_hog_features(ch1, orient, pix_per_cell, cell_per_block, feature_vec=False)
         hog2 = get_hog_features(ch2, orient, pix_per_cell, cell_per_block, feature_vec=False)
         hog3 = get_hog_features(ch3, orient, pix_per_cell, cell_per_block, feature_vec=False) 
+        delay = time.time() - t
+        print("HOG Features Computation: {:.2f}s".format(delay))
     else:
-        hog_features = get_hog_features(ctrans_tosearch[:,:,hog_channel], orient, 
+        hog_features_full = get_hog_features(ctrans_tosearch[:,:,hog_channel], orient, 
                     pix_per_cell, cell_per_block, feature_vec=False)
 
     on_windows = []
@@ -427,7 +452,7 @@ def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, N
                 hog_feat3 = hog3[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window].ravel() 
                 hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
             else:
-                hog_features = hog_features[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window, :].ravel() 
+                hog_features = hog_features_full[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window, :].ravel() 
 
             xleft = xpos * pix_per_cell
             ytop = ypos * pix_per_cell
@@ -448,11 +473,11 @@ def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, N
             
             # If the input patch has been predicted as a car, draw it
             if test_prediction == 1:
-                xbox_left = np.int(xleft*scale)
-                ytop_draw = np.int(ytop*scale)
+                xbox_left = np.int(xleft*scale) + x_start_stop[0]
+                ytop_draw = np.int(ytop*scale) + y_start_stop[0]
                 xwin_draw = np.int(xwindow*scale)
                 ywin_draw = np.int(ywindow*scale)
-                on_windows.append([(xbox_left, ytop_draw + y_start_stop[0]),(xbox_left + xwin_draw, ytop_draw + ywin_draw + y_start_stop[0])])
+                on_windows.append([(xbox_left, ytop_draw),(xbox_left + xwin_draw, ytop_draw + ywin_draw)])
                 
     return on_windows
 
@@ -761,11 +786,11 @@ def run_video_pipeline(image_processing_func):
     else:
         # Input parameters
         p = Parameters()
-        p.color_space = 'RGB' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
-        p.orient = 9
+        p.color_space = 'YCrCb' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
+        p.orient = 11
         p.pix_per_cell = 8
         p.cell_per_block = 2
-        p.hog_channel = 0 # Can be 0, 1, 2, or "ALL"
+        p.hog_channel = "ALL" # Can be 0, 1, 2, or "ALL"
         p.sample_size = 1000000
         p.spatial_size = (32, 32) # Spatial binning dimensions
         p.hist_bins = 32    # Number of histogram bins
@@ -774,16 +799,18 @@ def run_video_pipeline(image_processing_func):
         p.hog_feat = True # HOG features on or off
         p.seed = np.random.randint(0, 100)
         p.seed = 1
+        p.save_images = False
 
         # Parameters for Vehicle detection
         p.xy_windows =      [[192, 192], [128, 128], [96, 96], [64, 64]]
         p.y_start_stops =   [[400, 656], [400, 592], [400, 560], [400, 528]] # Min and max in y to search in slide_window[]
-        p.x_start_stops =   [[None, None], [None, None], [None, None], [None, None]]
+        p.x_start_stops =   [[None, None], [None, None], [100, 1200], [200, 1200]]
         p.xy_overlap=(0.9, 0.9)
         p.color = (0, 0, 255)
         p.thick = 3
         p.heat_thresh = 15
         p.is_input_jpg = True
+        p.frame_memory_length = 40
 
         # Train a classifier on labels images.
         (p.svc, p.X_scaler) = run_classifier(p)
@@ -792,15 +819,15 @@ def run_video_pipeline(image_processing_func):
     with open(pickle_file, 'wb') as handle:
         pickle.dump(p, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    p.heat_thresh = 8
-    p.xy_windows =      [[192, 192], [128, 128], [96, 96], [64, 64]]
-    p.y_start_stops =   [[400, 656], [400, 592], [400, 560], [400, 528]] # Min and max in y to search in slide_window[]
-    p.x_start_stops =   [[None, None], [None, None], [100, 1200], [200, 1200]]
-
-    frame_memory_length = 15
+    p.heat_thresh = 7
+    p.frame_memory_length = 30
+    p.save_images = False
+    p.xy_windows =      [[256, 256], [128, 128], [64, 64]]
+    p.y_start_stops =   [[350, 656], [350, 592], [350, 528]] # Min and max in y to search in slide_window[]
+    p.x_start_stops =   [[None, None], [None, None], [200, 1200]]
 
     # Load Video
-    in_clip = VideoFileClip(input_video)
+    in_clip = VideoFileClip(input_video).subclip(13, 30)
     nb_frames = int(in_clip.duration * in_clip.fps)
     out_images = []
     heat_map_memory = []
@@ -817,13 +844,14 @@ def run_video_pipeline(image_processing_func):
         (draw_img, heatmap, window_img, raw_heat_map, heat_avg) = process_image_with_memory(frame, p, find_windows_fast, heat_map_memory)
 
         # Store image for memory
-        while len(heat_map_memory) > frame_memory_length:
+        while len(heat_map_memory) > p.frame_memory_length:
             heat_map_memory.pop(0)
 
         heat_map_memory.append(raw_heat_map)
 
         # Save Images to file
-        save_images(draw_img, heatmap, heat_avg, window_img, output_dir, filename)
+        if p.save_images:
+            save_images(draw_img, heatmap, heat_avg, window_img, output_dir, filename)
 
         # Save Output frame
         output_file = output_dir + filename
@@ -831,6 +859,25 @@ def run_video_pipeline(image_processing_func):
 
         # Store output file
         out_images.append(output_file)
+
+        # Debug Plot
+        if debug_plot:
+            fig = plt.figure()
+            plt.subplot(221)
+            plt.imshow(window_img)
+            plt.title('Boxes')
+            plt.subplot(222)
+            plt.imshow(draw_img)
+            plt.title('Car Positions')
+            plt.subplot(223)
+            plt.imshow(raw_heat_map, cmap='hot')
+            plt.title('Heat Map')
+            plt.subplot(224)
+            plt.imshow(heat_avg, cmap='hot')
+            plt.title('Heat Map Average')
+            fig.tight_layout()
+
+            plt.show()
 
     # Make a clip
     print("Writing output video at {}".format(output_video))
