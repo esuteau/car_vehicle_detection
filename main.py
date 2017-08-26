@@ -377,12 +377,12 @@ def convert_color(img, origin='RGB', destination='RGB'):
 def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, None], 
                 xy_window=(64, 64), color_space='RGB', spatial_size=(32, 32),
                 hist_bins=32, hist_range=(0, 256), orient=9, pix_per_cell=8, cell_per_block=2,
-                hog_channel=0, spatial_feat=True, hist_feat=True, hog_feat=True):
+                hog_channel=0, spatial_feat=True, hist_feat=True, hog_feat=True, img_name=""):
 
     """Compute HOG feature on the whole image, extract the different patches and compute predictions.
     Return a list of rectangle that have been predicted as matching a vehicle"""
 
-        # If x and/or y start/stop positions not defined, set to image size
+    # If x and/or y start/stop positions not defined, set to image size
     if x_start_stop[0] == None:
         x_start_stop[0] = 0
     if x_start_stop[1] == None:
@@ -391,6 +391,20 @@ def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, N
         y_start_stop[0] = 0
     if y_start_stop[1] == None:
         y_start_stop[1] = img.shape[0]
+
+    # To save time with the test, we save the save the window detection at the end of this function, so that it can be reloaded later on.
+    # This will allow to play with the parameters and iterate at a much faster pace to find the right combination
+    output_folder = 'temp_save/'
+    create_folder(output_folder)
+    save_name = output_folder + '{}_windows_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}.p'.format(
+        img_name, hog_channel, orient, pix_per_cell, cell_per_block, xy_window[0], color_space, spatial_size[0],
+        x_start_stop[0], x_start_stop[1], y_start_stop[0], y_start_stop[1])
+
+    if os.path.exists(save_name):
+        with open(save_name, 'rb') as handle:
+            on_windows = pickle.load(handle)
+            print("Windows reloaded from {}".format(save_name))
+            return on_windows
 
     draw_img = np.copy(img)
 
@@ -478,6 +492,11 @@ def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, N
                 xwin_draw = np.int(xwindow*scale)
                 ywin_draw = np.int(ywindow*scale)
                 on_windows.append([(xbox_left, ytop_draw),(xbox_left + xwin_draw, ytop_draw + ywin_draw)])
+
+
+    # Save windows on disk, so that it could be reloaded later on.
+    with open(save_name, 'wb') as handle:
+        pickle.dump(on_windows, handle, protocol=pickle.HIGHEST_PROTOCOL)
                 
     return on_windows
 
@@ -514,9 +533,7 @@ def draw_labeled_bboxes(img, labels, color, thickness):
     return img
 
 def create_folder(folder_path):
-    if not os.path.exists(folder_path):
-        os.mkdir(folder_path)
-
+    os.makedirs(folder_path, exist_ok=True)
 
 def process_image(image, p, find_windows_func):
 
@@ -558,7 +575,7 @@ def process_image(image, p, find_windows_func):
 
 
 
-def process_image_with_memory(image, p, find_windows_func, raw_heat_maps):
+def process_image_with_memory(image, p, find_windows_func, raw_heat_maps, img_name):
     # Same image processing as above, but with memory, i.e. we combine
     # heatmaps from previous frames, calculate the average heatmap
     # and threshold the average result.
@@ -575,7 +592,7 @@ def process_image_with_memory(image, p, find_windows_func, raw_heat_maps):
         image = image.astype(np.float32)/255
 
     # Find car in windows
-    hot_windows = find_windows_func(image, p)
+    hot_windows = find_windows_func(image, p, img_name=img_name)
 
     # Draw Boxes
     window_img = draw_boxes(window_img, hot_windows, color=p.color, thick=p.thick)
@@ -583,6 +600,12 @@ def process_image_with_memory(image, p, find_windows_func, raw_heat_maps):
     # Create Heat Map
     heat_raw = np.zeros_like(image[:,:,0]).astype(np.float)
     heat_raw = add_heat(heat_raw,hot_windows)
+
+    # Now that we have detected the current heat map, we are going to use memory to detect which blobs should be worth considering.
+    # Instead of combining the current frame with the X previous ones and doing an average, we are going to use the X previous frames to
+    # define which blobs to keep in the current frame. To do that will penalize areas where not blobs were detected in the previous frames.
+
+
 
     # Now calculate an average heat map
     if len(raw_heat_maps) > 0:
@@ -615,7 +638,7 @@ def process_image_slow(image, p):
     return process_image(image, p, find_windows_slow)
 
 
-def find_windows_fast(image, p):
+def find_windows_fast(image, p, img_name=""):
     # Find the windows in the image that represent a car.
     # Calculate the HOG features on the entire image and then extract the windows.
 
@@ -627,7 +650,8 @@ def find_windows_fast(image, p):
             color_space=p.color_space, spatial_size=p.spatial_size,
             hist_bins=p.hist_bins, orient=p.orient, pix_per_cell=p.pix_per_cell,
             cell_per_block=p.cell_per_block, hog_channel=p.hog_channel,
-            spatial_feat=p.spatial_feat, hist_feat=p.hist_feat, hog_feat=p.hog_feat
+            spatial_feat=p.spatial_feat, hist_feat=p.hist_feat, hog_feat=p.hog_feat,
+            img_name=img_name
             )
 
         hot_windows.extend(win)
@@ -819,15 +843,20 @@ def run_video_pipeline(image_processing_func):
     with open(pickle_file, 'wb') as handle:
         pickle.dump(p, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    p.heat_thresh = 7
+    p.heat_thresh = 5
     p.frame_memory_length = 30
-    p.save_images = False
-    p.xy_windows =      [[256, 256], [128, 128], [64, 64]]
-    p.y_start_stops =   [[350, 656], [350, 592], [350, 528]] # Min and max in y to search in slide_window[]
-    p.x_start_stops =   [[None, None], [None, None], [200, 1200]]
+    p.save_images = True
+    # p.xy_windows =      [[128, 128], [92, 92], [64, 64]]
+    # p.y_start_stops =   [[400, 656], [400, 592], [400, 528]] # Min and max in y to search in slide_window[]
+    # p.x_start_stops =   [[None, None], [250, 1200], [350, 1200]]
+
+    p.xy_windows =      [[128, 128], [64, 64]]
+    p.y_start_stops =   [[400, None],  [400, None]] # Min and max in y to search in slide_window[]
+    p.x_start_stops =   [[None, None],  [350, None]]
+
 
     # Load Video
-    in_clip = VideoFileClip(input_video).subclip(13, 30)
+    in_clip = VideoFileClip(input_video)
     nb_frames = int(in_clip.duration * in_clip.fps)
     out_images = []
     heat_map_memory = []
@@ -841,7 +870,11 @@ def run_video_pipeline(image_processing_func):
         # Process Image
         prog_percent = 100 * (idx+1) / nb_frames
         print("Processing Frame {}/{} {:.1f}%".format(idx+1, nb_frames, prog_percent))
-        (draw_img, heatmap, window_img, raw_heat_map, heat_avg) = process_image_with_memory(frame, p, find_windows_fast, heat_map_memory)
+        (draw_img, heatmap, window_img, raw_heat_map, heat_avg) = process_image_with_memory(image=frame,
+                                                                                            p=p,
+                                                                                            find_windows_func=find_windows_fast,
+                                                                                            raw_heat_maps=heat_map_memory,
+                                                                                            img_name="frame_{}".format(idx))
 
         # Store image for memory
         while len(heat_map_memory) > p.frame_memory_length:

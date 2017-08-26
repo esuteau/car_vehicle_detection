@@ -39,3 +39,4 @@ Thumbs.db
 # Dataset and output images
 /data
 /output_images
+/temp_save
