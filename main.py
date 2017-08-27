@@ -147,7 +147,7 @@ def get_features_single_img(img, color_space='RGB', spatial_size=(32, 32),
         # Append features to list
         img_features.append(hog_features)
 
-    # Return concatenated array of features
+    # Features
     return np.concatenate(img_features)
 
 def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
@@ -205,7 +205,7 @@ def get_labels_images():
 
 
 def get_param_hash(p):
-        return = "{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}".format(
+        return "{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}".format(
             p.color_space,
             p.orient,
             p.pix_per_cell ,
@@ -226,7 +226,7 @@ def run_feature_extraction(cars, notcars, p):
     t=time.time()
 
     print("Extracting Features for {} car images".format(len(cars)))
-    pickle_name = "car_features_{}_{}".format(len(cars), get_param_hash(p))
+    pickle_name = "temp_save/car_features_{}_{}".format(len(cars), get_param_hash(p))
     if os.path.exists(pickle_name):
         print("Reloading from {}".format(pickle_name))
         with open(pickle_name, 'rb') as f:
@@ -250,11 +250,11 @@ def run_feature_extraction(cars, notcars, p):
 
 
     print("Extracting Features for {} non-car images".format(len(notcars)))
-    pickle_name = "car_features_{}_{}".format(len(cars), get_param_hash(p))
+    pickle_name = "temp_save/notcar_features_{}_{}".format(len(cars), get_param_hash(p))
     if os.path.exists(pickle_name):
         print("Reloading from {}".format(pickle_name))
         with open(pickle_name, 'rb') as f:
-            car_features = pickle.load(f)
+            notcar_features = pickle.load(f)
     else:
         notcar_features = extract_features(notcars, 
             color_space=p.color_space,
@@ -270,7 +270,7 @@ def run_feature_extraction(cars, notcars, p):
             hog_feat=p.hog_feat)
 
         with open(pickle_name, 'wb') as f:
-            pickle.dump(car_features, f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(notcar_features, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     t2 = time.time()
     print(round(t2-t, 2), 'Seconds to run feature extraction on {} car images and {} non-car images.'.format(len(cars), len(notcars)))
@@ -562,18 +562,6 @@ def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, N
             # Initialize feature vector
             features = []
 
-            # Extract HOG for this patch
-            if hog_feat == True:
-                if hog_channel == 'ALL':
-                    hog_feat1 = hog1[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window].ravel() 
-                    hog_feat2 = hog2[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window].ravel() 
-                    hog_feat3 = hog3[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window].ravel() 
-                    hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
-                else:
-                    hog_features = hog_features_full[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window, :].ravel() 
-
-                features.append(hog_features)
-
             # Compute spatial features if flag is set
             if spatial_feat == True:
                 spatial_features = get_spatial_features(img=subimg, size=spatial_size)
@@ -585,8 +573,21 @@ def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, N
                 hist_features = get_hist_features(img=subimg, nbins=hist_bins, bins_range=hist_range)
                 # Append features to list
                 features.append(hist_features)
-          
+
+            # Extract HOG for this patch
+            if hog_feat == True:
+                if hog_channel == 'ALL':
+                    hog_feat1 = hog1[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window].ravel() 
+                    hog_feat2 = hog2[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window].ravel() 
+                    hog_feat3 = hog3[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window].ravel() 
+                    hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
+                else:
+                    hog_features = hog_features_full[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window, :].ravel() 
+
+                features.append(hog_features.ravel())
+
             # Scale features and make a prediction
+            features = np.concatenate(features)
             test_features = scaler.transform(features.reshape(1,-1))    
             test_prediction = svc.predict(test_features)
             
@@ -921,7 +922,7 @@ def run_video_pipeline(image_processing_func):
         p.pix_per_cell = 8
         p.cell_per_block = 2
         p.hog_channel = "ALL" # Can be 0, 1, 2, or "ALL"
-        p.sample_size = 1000000
+        p.sample_size = 100
         p.spatial_size = (32, 32) # Spatial binning dimensions
         p.hist_bins = 32    # Number of histogram bins
         p.hist_range = (0.0, 1.0)
