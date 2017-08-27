@@ -1023,11 +1023,12 @@ def run_video_pipeline(image_processing_func):
         # Process Image
         prog_percent = 100 * (idx+1) / nb_frames
         print("Processing Frame {}/{} {:.1f}%".format(idx+1, nb_frames, prog_percent))
-        (draw_img, heatmap, window_img, raw_heat_map, heat_avg) = process_image_with_memory(image=frame,
-                                                                                            p=p,
-                                                                                            find_windows_func=find_windows_fast,
-                                                                                            raw_heat_maps=heat_map_memory,
-                                                                                            img_name="frame_{}".format(idx))
+        (draw_img, heatmap, window_img, raw_heat_map, heat_avg) = \
+            process_image_with_memory( image=frame,
+                                        p=p,
+                                        find_windows_func=find_windows_fast,
+                                        raw_heat_maps=heat_map_memory,
+                                        img_name="frame_{}".format(idx))
         # Append new map to queue
         heat_map_memory.append(raw_heat_map)
 
