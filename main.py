@@ -11,6 +11,7 @@ import glob
 import os
 import pickle
 import time
+import collections
 
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
@@ -75,7 +76,7 @@ def color_hist(img, nbins=32, bins_range=(0, 256)):
 
 
 def single_img_features(img, color_space='RGB', spatial_size=(32, 32),
-                        hist_bins=32, orient=9, 
+                        hist_bins=32, orient=9, hist_range=(0,256)
                         pix_per_cell=8, cell_per_block=2, hog_channel=0,
                         spatial_feat=True, hist_feat=True, hog_feat=True): 
     """Transform the input RGB image to a feature vector depending
@@ -95,7 +96,7 @@ def single_img_features(img, color_space='RGB', spatial_size=(32, 32),
 
     # Compute histogram features if flag is set
     if hist_feat == True:
-        hist_features = color_hist(feature_image, nbins=hist_bins)
+        hist_features = color_hist(feature_image, nbins=hist_bins, bins_range=hist_range)
         # Append features to list
         img_features.append(hist_features)
 
@@ -156,7 +157,7 @@ def get_labels_images():
            glob.glob('data/vehicles/GTI_MiddleClose/*.png') + \
            glob.glob('data/vehicles/GTI_Right/*.png') + \
            glob.glob('data/vehicles/KITTI_extracted/*.png')
-    notcars = glob.glob('data/non_vehicles/*.png')
+    notcars = glob.glob('data/non_vehicles/Extras/*.png')
     return (cars, notcars)
 
 def run_feature_extraction(cars, notcars, p):
@@ -476,7 +477,7 @@ def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, N
           
             # Get color features
             spatial_features = bin_spatial(subimg, size=spatial_size)
-            hist_features = color_hist(subimg, nbins=hist_bins)
+            hist_features = color_hist(subimg, nbins=hist_bins, bins_range=hist_range)
 
             # Combine all features
             features = np.hstack((spatial_features, hist_features, hog_features))
@@ -604,14 +605,14 @@ def process_image_with_memory(image, p, find_windows_func, raw_heat_maps, img_na
     # Now that we have detected the current heat map, we are going to use memory to detect which blobs should be worth considering.
     # Instead of combining the current frame with the X previous ones and doing an average, we are going to use the X previous frames to
     # define which blobs to keep in the current frame. To do that will penalize areas where not blobs were detected in the previous frames.
-
-
+   
+    #heat_raw[heat_raw == 0] = -5
 
     # Now calculate an average heat map
     if len(raw_heat_maps) > 0:
         heat_tot = np.dstack(raw_heat_maps)
         heat_tot = np.dstack((heat_tot, heat_raw))
-        heat_avg = np.average(heat_tot, axis=2)
+        heat_avg = np.sum(heat_tot, axis=2)
     else:
         heat_avg = heat_raw
 
@@ -648,7 +649,8 @@ def find_windows_fast(image, p, img_name=""):
             img=image, svc=p.svc, scaler=p.X_scaler, x_start_stop=p.x_start_stops[idx],
             y_start_stop=p.y_start_stops[idx], xy_window=p.xy_windows[idx],
             color_space=p.color_space, spatial_size=p.spatial_size,
-            hist_bins=p.hist_bins, orient=p.orient, pix_per_cell=p.pix_per_cell,
+            hist_bins=p.hist_bins, hist_range=p.hist_range,
+            orient=p.orient, pix_per_cell=p.pix_per_cell,
             cell_per_block=p.cell_per_block, hog_channel=p.hog_channel,
             spatial_feat=p.spatial_feat, hist_feat=p.hist_feat, hog_feat=p.hog_feat,
             img_name=img_name
@@ -799,7 +801,7 @@ def run_video_pipeline(image_processing_func):
     output_video = output_dir + 'output_video.mp4'
 
     pickle_file = 'parameters.pickle'
-    force_overwrite = False
+    force_overwrite = True
     debug_plot = False
 
     if os.path.exists(pickle_file) and not force_overwrite:
@@ -810,7 +812,7 @@ def run_video_pipeline(image_processing_func):
     else:
         # Input parameters
         p = Parameters()
-        p.color_space = 'YCrCb' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
+        p.color_space = 'YUV' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
         p.orient = 11
         p.pix_per_cell = 8
         p.cell_per_block = 2
@@ -818,7 +820,8 @@ def run_video_pipeline(image_processing_func):
         p.sample_size = 1000000
         p.spatial_size = (32, 32) # Spatial binning dimensions
         p.hist_bins = 32    # Number of histogram bins
-        p.spatial_feat = True # Spatial features on or off
+        p.hist_range = (0.0, 1.0)
+        p.spatial_feat = False # Spatial features on or off
         p.hist_feat = True # Histogram features on or off
         p.hog_feat = True # HOG features on or off
         p.seed = np.random.randint(0, 100)
@@ -826,9 +829,9 @@ def run_video_pipeline(image_processing_func):
         p.save_images = False
 
         # Parameters for Vehicle detection
-        p.xy_windows =      [[192, 192], [128, 128], [96, 96], [64, 64]]
-        p.y_start_stops =   [[400, 656], [400, 592], [400, 560], [400, 528]] # Min and max in y to search in slide_window[]
-        p.x_start_stops =   [[None, None], [None, None], [100, 1200], [200, 1200]]
+        p.xy_windows =      [[64, 64]]
+        p.y_start_stops =   [[350, 656]] # Min and max in y to search in slide_window[]
+        p.x_start_stops =   [[None, None]]
         p.xy_overlap=(0.9, 0.9)
         p.color = (0, 0, 255)
         p.thick = 3
@@ -844,22 +847,21 @@ def run_video_pipeline(image_processing_func):
         pickle.dump(p, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     p.heat_thresh = 5
-    p.frame_memory_length = 30
+    p.frame_memory_length = 40
     p.save_images = True
-    # p.xy_windows =      [[128, 128], [92, 92], [64, 64]]
-    # p.y_start_stops =   [[400, 656], [400, 592], [400, 528]] # Min and max in y to search in slide_window[]
-    # p.x_start_stops =   [[None, None], [250, 1200], [350, 1200]]
-
-    p.xy_windows =      [[128, 128], [64, 64]]
-    p.y_start_stops =   [[400, None],  [400, None]] # Min and max in y to search in slide_window[]
-    p.x_start_stops =   [[None, None],  [350, None]]
+    p.xy_windows =      [[64, 64]]
+    p.y_start_stops =   [[350, 656]] # Min and max in y to search in slide_window[]
+    p.x_start_stops =   [[None, None]]
+    # p.xy_windows =      [[128, 128], [64, 64]]
+    # p.y_start_stops =   [[400, None],  [400, None]] # Min and max in y to search in slide_window[]
+    # p.x_start_stops =   [[None, None],  [350, None]]
 
 
     # Load Video
-    in_clip = VideoFileClip(input_video)
+    in_clip = VideoFileClip(input_video).subclip(13,18)
     nb_frames = int(in_clip.duration * in_clip.fps)
     out_images = []
-    heat_map_memory = []
+    heat_map_memory = collections.deque(maxlen=p.frame_memory_length)
     for idx, frame in enumerate(in_clip.iter_frames()):
 
         filename = 'frame_{}.jpg'.format(idx)
@@ -875,11 +877,7 @@ def run_video_pipeline(image_processing_func):
                                                                                             find_windows_func=find_windows_fast,
                                                                                             raw_heat_maps=heat_map_memory,
                                                                                             img_name="frame_{}".format(idx))
-
-        # Store image for memory
-        while len(heat_map_memory) > p.frame_memory_length:
-            heat_map_memory.pop(0)
-
+        # Append new map to queue
         heat_map_memory.append(raw_heat_map)
 
         # Save Images to file
@@ -925,5 +923,8 @@ if __name__ == "__main__":
     print('Author: Erwan Suteau')
     print('----------------------------------------------')
 
+    t = time.time()
     #run_test_image_pipeline(process_image_fast)
     run_video_pipeline(process_image_fast)
+    total = time.time() - t
+    print('\nCompleted in {:.2f}s'.format(total))
