@@ -176,7 +176,7 @@ def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
                         hist_bins=32, orient=9, hist_range=(0,256),
                         pix_per_cell=8, cell_per_block=2, hog_channel=0,
                         spatial_feat=True, hist_feat=True, hog_feat=True,
-                        Transform_sqrt=True):
+                        transform_sqrt=True):
     """Feature extraction, but on a list of image filenames.
     Returns a vector of features for each image"""
 
@@ -224,7 +224,8 @@ def get_labels_images():
            glob.glob('data/vehicles/GTI_MiddleClose/*.png') + \
            glob.glob('data/vehicles/GTI_Right/*.png') + \
            glob.glob('data/vehicles/KITTI_extracted/*.png')
-    notcars = glob.glob('data/non_vehicles/Extras/*.png')
+    notcars = glob.glob('data/non-vehicles/Extras/*.png') + \
+              glob.glob('data/non-vehicles/GTI/*.png')
     return (cars, notcars)
 
 
@@ -268,7 +269,7 @@ def run_feature_extraction(cars, notcars, p):
             spatial_feat=p.spatial_feat,
             hist_feat=p.hist_feat,
             hog_feat=p.hog_feat,
-            Transform_sqrt=p.transform_sqrt)
+            transform_sqrt=p.transform_sqrt)
 
         with open(pickle_name, 'wb') as f:
             pickle.dump(car_features, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -293,7 +294,7 @@ def run_feature_extraction(cars, notcars, p):
             spatial_feat=p.spatial_feat,
             hist_feat=p.hist_feat,
             hog_feat=p.hog_feat,
-            tranform_sqrt=transform_sqrt)
+            tranform_sqrt=p.transform_sqrt)
 
         with open(pickle_name, 'wb') as f:
             pickle.dump(notcar_features, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -966,7 +967,7 @@ def run_video_pipeline(image_processing_func):
         p.pix_per_cell = 8
         p.cell_per_block = 2
         p.hog_channel = "ALL" # Can be 0, 1, 2, or "ALL"
-        p.sample_size = 100
+        p.sample_size = 100000
         p.spatial_size = (32, 32) # Spatial binning dimensions
         p.hist_bins = 32    # Number of histogram bins
         p.hist_range = (0.0, 1.0)
@@ -1008,7 +1009,7 @@ def run_video_pipeline(image_processing_func):
 
 
     # Load Video
-    in_clip = VideoFileClip(input_video).subclip(13,18)
+    in_clip = VideoFileClip(input_video)
     nb_frames = int(in_clip.duration * in_clip.fps)
     out_images = []
     heat_map_memory = collections.deque(maxlen=p.frame_memory_length)
