@@ -72,7 +72,7 @@ def get_hist_features(img, nbins=32, bins_range=(0, 256)):
     hist_features = np.concatenate((channel1_hist, channel2_hist, channel3_hist))
 
     # Debug Plot
-    if True:
+    if False:
         # Calculating Bin Centers
         bin_centers = (c1_bin_edges[1:]  + c1_bin_edges[0:len(c1_bin_edges)-1])/2
 
