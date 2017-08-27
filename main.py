@@ -203,33 +203,74 @@ def get_labels_images():
     notcars = glob.glob('data/non_vehicles/Extras/*.png')
     return (cars, notcars)
 
-def run_feature_extraction(cars, notcars, p):
-    t=time.time()
-    car_features = extract_features(cars,
-        color_space=p.color_space,
-        orient=p.orient, 
-        pix_per_cell=p.pix_per_cell,
-        cell_per_block=p.cell_per_block, 
-        hog_channel=p.hog_channel,
-        spatial_size=p.spatial_size,
-        hist_bins=p.hist_bins,
-        hist_range=p.hist_range,
-        spatial_feat=p.spatial_feat,
-        hist_feat=p.hist_feat,
-        hog_feat=p.hog_feat)
 
-    notcar_features = extract_features(notcars, 
-        color_space=p.color_space,
-        orient=p.orient, 
-        pix_per_cell=p.pix_per_cell,
-        cell_per_block=p.cell_per_block, 
-        hog_channel=p.hog_channel,
-        spatial_size=p.spatial_size,
-        hist_bins=p.hist_bins,
-        hist_range=p.hist_range,
-        spatial_feat=p.spatial_feat,
-        hist_feat=p.hist_feat,
-        hog_feat=p.hog_feat)
+def get_param_hash(p):
+        return = "{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}".format(
+            p.color_space,
+            p.orient,
+            p.pix_per_cell ,
+            p.cell_per_block,
+            p.hog_channel,
+            p.sample_size,
+            p.spatial_size[0],
+            p.hist_bins,
+            p.hist_range[0],
+            p.hist_range[1],
+            p.spatial_feat,
+            p.hist_feat,
+            p.hog_feat,
+            p.seed)
+
+def run_feature_extraction(cars, notcars, p):
+
+    t=time.time()
+
+    print("Extracting Features for {} car images".format(len(cars)))
+    pickle_name = "car_features_{}_{}".format(len(cars), get_param_hash(p))
+    if os.path.exists(pickle_name):
+        print("Reloading from {}".format(pickle_name))
+        with open(pickle_name, 'rb') as f:
+            car_features = pickle.load(f)
+    else:
+        car_features = extract_features(cars,
+            color_space=p.color_space,
+            orient=p.orient, 
+            pix_per_cell=p.pix_per_cell,
+            cell_per_block=p.cell_per_block, 
+            hog_channel=p.hog_channel,
+            spatial_size=p.spatial_size,
+            hist_bins=p.hist_bins,
+            hist_range=p.hist_range,
+            spatial_feat=p.spatial_feat,
+            hist_feat=p.hist_feat,
+            hog_feat=p.hog_feat)
+
+        with open(pickle_name, 'wb') as f:
+            pickle.dump(car_features, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+    print("Extracting Features for {} non-car images".format(len(notcars)))
+    pickle_name = "car_features_{}_{}".format(len(cars), get_param_hash(p))
+    if os.path.exists(pickle_name):
+        print("Reloading from {}".format(pickle_name))
+        with open(pickle_name, 'rb') as f:
+            car_features = pickle.load(f)
+    else:
+        notcar_features = extract_features(notcars, 
+            color_space=p.color_space,
+            orient=p.orient, 
+            pix_per_cell=p.pix_per_cell,
+            cell_per_block=p.cell_per_block, 
+            hog_channel=p.hog_channel,
+            spatial_size=p.spatial_size,
+            hist_bins=p.hist_bins,
+            hist_range=p.hist_range,
+            spatial_feat=p.spatial_feat,
+            hist_feat=p.hist_feat,
+            hog_feat=p.hog_feat)
+
+        with open(pickle_name, 'wb') as f:
+            pickle.dump(car_features, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     t2 = time.time()
     print(round(t2-t, 2), 'Seconds to run feature extraction on {} car images and {} non-car images.'.format(len(cars), len(notcars)))
@@ -274,7 +315,6 @@ def run_classifier(p):
     print('\n----- Feature Extraction -----')
     pickle_file = 'temp_save/classifier_feature_extraction'
     (car_features, notcar_features) = run_feature_extraction(cars, notcars, p)
-
 
     # Transform features to X and Y vectors
     (X, y, X_scaler) = prepare_features(car_features, notcar_features)
