@@ -25,19 +25,38 @@ from sklearn.svm import LinearSVC
 import cv2
 
 
-def get_hog_features(img, orient, pix_per_cell, cell_per_block, vis=False, feature_vec=True):
+def get_hog_features(img, orient, pix_per_cell, cell_per_block, transform_sqrt, vis=False, feature_vec=True):
     """Computes the HOG features on the input image"""
     # Call with two outputs if vis==True
     if vis == True:
-        features, hog_image = hog(img, orientations=orient, pixels_per_cell=(pix_per_cell, pix_per_cell),
-                                cells_per_block=(cell_per_block, cell_per_block), transform_sqrt=True, 
-                                visualise=vis, feature_vector=feature_vec, block_norm='L2-Hys')
+        features, hog_image = hog(img,
+         orientations=orient,
+         pixels_per_cell=(pix_per_cell, pix_per_cell),
+         cells_per_block=(cell_per_block, cell_per_block),
+         transform_sqrt=transform_sqrt, 
+         visualise=vis,
+         feature_vector=feature_vec,
+         block_norm='L2-Hys')
+
         return features, hog_image
     # Otherwise call with one output
     else:      
-        features = hog(img, orientations=orient, pixels_per_cell=(pix_per_cell, pix_per_cell),
-                    cells_per_block=(cell_per_block, cell_per_block), transform_sqrt=True, 
-                    visualise=vis, feature_vector=feature_vec, block_norm='L2-Hys')
+        features = hog(
+            img,
+            orientations=orient,
+            pixels_per_cell=(pix_per_cell, pix_per_cell),
+            cells_per_block=(cell_per_block, cell_per_block),
+            transform_sqrt=transform_sqrt, 
+            visualise=vis,
+            feature_vector=feature_vec,
+            block_norm='L2-Hys')
+
+        # if len(np.where(np.isnan(features.ravel())) == True):
+        #     print("HOG Features problem. Found nan value")
+        #     plt.figure()
+        #     plt.imshow(img)
+        #     plt.show()
+                    
         return features
 
 def draw_boxes(img, bboxes, color=(0, 0, 255), thick=6):
@@ -98,7 +117,8 @@ def get_hist_features(img, nbins=32, bins_range=(0, 256)):
 def get_features_single_img(img, color_space='RGB', spatial_size=(32, 32),
                         hist_bins=32, orient=9, hist_range=(0,256),
                         pix_per_cell=8, cell_per_block=2, hog_channel=0,
-                        spatial_feat=True, hist_feat=True, hog_feat=True): 
+                        spatial_feat=True, hist_feat=True, hog_feat=True,
+                        transform_sqrt=True): 
     """Transform the input RGB image to a feature vector depending
     on the chosen input parameters"""
 
@@ -129,7 +149,8 @@ def get_features_single_img(img, color_space='RGB', spatial_size=(32, 32),
                     img=feature_image[:,:,channel], 
                     orient=orient,
                     pix_per_cell=pix_per_cell,
-                    cell_per_block=cell_per_block, 
+                    cell_per_block=cell_per_block,
+                    transform_sqrt=transform_sqrt,
                     vis=False,
                     feature_vec=True)
 
@@ -140,6 +161,7 @@ def get_features_single_img(img, color_space='RGB', spatial_size=(32, 32),
                 orient=orient, 
                 pix_per_cell=pix_per_cell,
                 cell_per_block=cell_per_block,
+                transform_sqrt=transform_sqrt,
                 vis=False,
                 feature_vec=True)
 
@@ -153,7 +175,8 @@ def get_features_single_img(img, color_space='RGB', spatial_size=(32, 32),
 def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
                         hist_bins=32, orient=9, hist_range=(0,256),
                         pix_per_cell=8, cell_per_block=2, hog_channel=0,
-                        spatial_feat=True, hist_feat=True, hog_feat=True):
+                        spatial_feat=True, hist_feat=True, hog_feat=True,
+                        Transform_sqrt=True):
     """Feature extraction, but on a list of image filenames.
     Returns a vector of features for each image"""
 
@@ -182,7 +205,8 @@ def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
             hog_channel=hog_channel,
             spatial_feat=spatial_feat,
             hist_feat=hist_feat,
-            hog_feat=hog_feat)
+            hog_feat=hog_feat,
+            transform_sqrt=transform_sqrt)
 
         features.append(file_features)
 
@@ -243,7 +267,8 @@ def run_feature_extraction(cars, notcars, p):
             hist_range=p.hist_range,
             spatial_feat=p.spatial_feat,
             hist_feat=p.hist_feat,
-            hog_feat=p.hog_feat)
+            hog_feat=p.hog_feat,
+            Transform_sqrt=p.transform_sqrt)
 
         with open(pickle_name, 'wb') as f:
             pickle.dump(car_features, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -267,7 +292,8 @@ def run_feature_extraction(cars, notcars, p):
             hist_range=p.hist_range,
             spatial_feat=p.spatial_feat,
             hist_feat=p.hist_feat,
-            hog_feat=p.hog_feat)
+            hog_feat=p.hog_feat,
+            tranform_sqrt=transform_sqrt)
 
         with open(pickle_name, 'wb') as f:
             pickle.dump(notcar_features, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -472,7 +498,7 @@ def convert_color(img, origin='RGB', destination='RGB'):
 def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, None], 
                 xy_window=(64, 64), color_space='RGB', spatial_size=(32, 32),
                 hist_bins=32, hist_range=(0, 256), orient=9, pix_per_cell=8, cell_per_block=2,
-                hog_channel=0, spatial_feat=True, hist_feat=True, hog_feat=True, img_name=""):
+                hog_channel=0, spatial_feat=True, hist_feat=True, hog_feat=True, img_name="", transform_sqrt=True):
 
     """Compute HOG feature on the whole image, extract the different patches and compute predictions.
     Return a list of rectangle that have been predicted as matching a vehicle"""
@@ -538,14 +564,19 @@ def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, N
 
     if hog_channel == 'ALL':
         t = time.time()
-        hog1 = get_hog_features(ch1, orient, pix_per_cell, cell_per_block, feature_vec=False)
-        hog2 = get_hog_features(ch2, orient, pix_per_cell, cell_per_block, feature_vec=False)
-        hog3 = get_hog_features(ch3, orient, pix_per_cell, cell_per_block, feature_vec=False) 
+        hog1 = get_hog_features(img=ch1, orient=orient, pix_per_cell=pix_per_cell, cell_per_block=cell_per_block, transform_sqrt=transform_sqrt, feature_vec=False)
+        hog2 = get_hog_features(img=ch2, orient=orient, pix_per_cell=pix_per_cell, cell_per_block=cell_per_block, transform_sqrt=transform_sqrt, feature_vec=False)
+        hog3 = get_hog_features(img=ch3, orient=orient, pix_per_cell=pix_per_cell, cell_per_block=cell_per_block, transform_sqrt=transform_sqrt, feature_vec=False) 
         delay = time.time() - t
         print("HOG Features Computation: {:.2f}s".format(delay))
     else:
-        hog_features_full = get_hog_features(ctrans_tosearch[:,:,hog_channel], orient, 
-                    pix_per_cell, cell_per_block, feature_vec=False)
+        hog_features_full = get_hog_features(
+            img=ctrans_tosearch[:,:,hog_channel],
+            orient=orient, 
+            pix_per_cell=pix_per_cell,
+            cell_per_block=cell_per_block,
+            transform_sqrt=transform_sqrt,
+            feature_vec=False)
 
     on_windows = []
     
@@ -722,8 +753,9 @@ def process_image_with_memory(image, p, find_windows_func, raw_heat_maps, img_na
         heat_avg = heat_raw
 
     # Apply threshold to help remove false positives
-    print("Max Heat: {} (Threshold: {})".format(np.max(heat_avg[:]), p.heat_thresh))
-    heat = apply_threshold(heat_avg, p.heat_thresh)
+    theshold = (len(raw_heat_maps) + 1) * p.heat_thresh
+    print("Max Heat: {} (Threshold: {})".format(np.max(heat_avg[:]), theshold))
+    heat = apply_threshold(heat_avg, theshold)
     heatmap = np.clip(heat, 0, 255)
 
     # Find final boxes from heatmap using label function
@@ -751,14 +783,25 @@ def find_windows_fast(image, p, img_name=""):
     hot_windows = []
     for idx in range(len(p.y_start_stops)):
         win = find_cars(
-            img=image, svc=p.svc, scaler=p.X_scaler, x_start_stop=p.x_start_stops[idx],
-            y_start_stop=p.y_start_stops[idx], xy_window=p.xy_windows[idx],
-            color_space=p.color_space, spatial_size=p.spatial_size,
-            hist_bins=p.hist_bins, hist_range=p.hist_range,
-            orient=p.orient, pix_per_cell=p.pix_per_cell,
-            cell_per_block=p.cell_per_block, hog_channel=p.hog_channel,
-            spatial_feat=p.spatial_feat, hist_feat=p.hist_feat, hog_feat=p.hog_feat,
-            img_name=img_name
+            img=image,
+            svc=p.svc,
+            scaler=p.X_scaler,
+            x_start_stop=p.x_start_stops[idx],
+            y_start_stop=p.y_start_stops[idx],
+            xy_window=p.xy_windows[idx],
+            color_space=p.color_space,
+            spatial_size=p.spatial_size,
+            hist_bins=p.hist_bins,
+            hist_range=p.hist_range,
+            orient=p.orient,
+            pix_per_cell=p.pix_per_cell,
+            cell_per_block=p.cell_per_block,
+            hog_channel=p.hog_channel,
+            spatial_feat=p.spatial_feat,
+            hist_feat=p.hist_feat,
+            hog_feat=p.hog_feat,
+            img_name=img_name,
+            transform_sqrt=p.transform_sqrt
             )
 
         hot_windows.extend(win)
@@ -838,6 +881,7 @@ def run_test_image_pipeline(image_processing_func=process_image):
         p.spatial_feat = True # Spatial features on or off
         p.hist_feat = True # Histogram features on or off
         p.hog_feat = True # HOG features on or off
+        p.transform_sqrt = True
         p.seed = np.random.randint(0, 100)
         p.seed = 1
 
@@ -929,6 +973,7 @@ def run_video_pipeline(image_processing_func):
         p.spatial_feat = False # Spatial features on or off
         p.hist_feat = True # Histogram features on or off
         p.hog_feat = True # HOG features on or off
+        p.transform_sqrt = True
         p.seed = np.random.randint(0, 100)
         p.seed = 1
         p.save_images = False
@@ -951,11 +996,11 @@ def run_video_pipeline(image_processing_func):
     with open(pickle_file, 'wb') as handle:
         pickle.dump(p, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    p.heat_thresh = 5
-    p.frame_memory_length = 40
+    p.heat_thresh = 20
+    p.frame_memory_length = 10
     p.save_images = True
     p.xy_windows =      [[64, 64]]
-    p.y_start_stops =   [[350, 656]] # Min and max in y to search in slide_window[]
+    p.y_start_stops =   [[400, 656]] # Min and max in y to search in slide_window[]
     p.x_start_stops =   [[None, None]]
     # p.xy_windows =      [[128, 128], [64, 64]]
     # p.y_start_stops =   [[400, None],  [400, None]] # Min and max in y to search in slide_window[]
