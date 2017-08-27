@@ -232,7 +232,7 @@ def run_feature_extraction(cars, notcars, p):
         hog_feat=p.hog_feat)
 
     t2 = time.time()
-    print(round(t2-t, 2), 'Seconds to extract HOG features...')
+    print(round(t2-t, 2), 'Seconds to run feature extraction on {} car images and {} non-car images.'.format(len(cars), len(notcars)))
     return (car_features, notcar_features)
 
 def prepare_features(car_features, notcar_features):
@@ -272,7 +272,9 @@ def run_classifier(p):
 
     # Run Feature Extraction
     print('\n----- Feature Extraction -----')
+    pickle_file = 'temp_save/classifier_feature_extraction'
     (car_features, notcar_features) = run_feature_extraction(cars, notcars, p)
+
 
     # Transform features to X and Y vectors
     (X, y, X_scaler) = prepare_features(car_features, notcar_features)
@@ -511,29 +513,39 @@ def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, N
         for yb in range(nysteps):
             ypos = yb*cells_per_step
             xpos = xb*cells_per_step
-
-            # Extract HOG for this patch
-            if hog_channel == 'ALL':
-                hog_feat1 = hog1[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window].ravel() 
-                hog_feat2 = hog2[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window].ravel() 
-                hog_feat3 = hog3[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window].ravel() 
-                hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
-            else:
-                hog_features = hog_features_full[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window, :].ravel() 
-
             xleft = xpos * pix_per_cell
             ytop = ypos * pix_per_cell
 
             # Extract the image patch
             subimg = cv2.resize(ctrans_tosearch[ytop:ytop+xwindow, xleft:xleft+ywindow], (64,64))
+
+            # Initialize feature vector
+            features = []
+
+            # Extract HOG for this patch
+            if hog_feat == True:
+                if hog_channel == 'ALL':
+                    hog_feat1 = hog1[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window].ravel() 
+                    hog_feat2 = hog2[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window].ravel() 
+                    hog_feat3 = hog3[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window].ravel() 
+                    hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
+                else:
+                    hog_features = hog_features_full[ypos:ypos+nyblocks_per_window, xpos:xpos+nxblocks_per_window, :].ravel() 
+
+                features.append(hog_features)
+
+            # Compute spatial features if flag is set
+            if spatial_feat == True:
+                spatial_features = get_spatial_features(img=subimg, size=spatial_size)
+                # Append features to list
+                features.append(spatial_features)
+
+            # Compute histogram features if flag is set
+            if hist_feat == True:
+                hist_features = get_hist_features(img=subimg, nbins=hist_bins, bins_range=hist_range)
+                # Append features to list
+                features.append(hist_features)
           
-            # Get color features
-            spatial_features = get_spatial_features(subimg, size=spatial_size)
-            hist_features = get_hist_features(subimg, nbins=hist_bins, bins_range=hist_range)
-
-            # Combine all features
-            features = np.hstack((spatial_features, hist_features, hog_features))
-
             # Scale features and make a prediction
             test_features = scaler.transform(features.reshape(1,-1))    
             test_prediction = svc.predict(test_features)
