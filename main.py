@@ -294,7 +294,7 @@ def run_feature_extraction(cars, notcars, p):
             spatial_feat=p.spatial_feat,
             hist_feat=p.hist_feat,
             hog_feat=p.hog_feat,
-            tranform_sqrt=p.transform_sqrt)
+            transform_sqrt=p.transform_sqrt)
 
         with open(pickle_name, 'wb') as f:
             pickle.dump(notcar_features, f, protocol=pickle.HIGHEST_PROTOCOL)
