@@ -651,9 +651,10 @@ def add_heat(heatmap, bbox_list):
     
 def apply_threshold(heatmap, threshold):
     # Zero out pixels below the threshold
-    heatmap[heatmap <= threshold] = 0
+    heat_thres = np.copy(heatmap)
+    heat_thres[heat_thres <= threshold] = 0
     # Return thresholded map
-    return heatmap
+    return heat_thres
 
 def draw_labeled_bboxes(img, labels, color, thickness):
     # Iterate through all detected cars
@@ -713,7 +714,7 @@ def process_image(image, p, find_windows_func):
 
 
 
-def process_image_with_memory(image, p, find_windows_func, raw_heat_maps, img_name):
+def process_image_with_memory(image, p, find_windows_func, heat_sum, nb_summed_maps, img_name):
     # Same image processing as above, but with memory, i.e. we combine
     # heatmaps from previous frames, calculate the average heatmap
     # and threshold the average result.
@@ -739,24 +740,18 @@ def process_image_with_memory(image, p, find_windows_func, raw_heat_maps, img_na
     heat_raw = np.zeros_like(image[:,:,0]).astype(np.float)
     heat_raw = add_heat(heat_raw,hot_windows)
 
-    # Now that we have detected the current heat map, we are going to use memory to detect which blobs should be worth considering.
-    # Instead of combining the current frame with the X previous ones and doing an average, we are going to use the X previous frames to
-    # define which blobs to keep in the current frame. To do that will penalize areas where not blobs were detected in the previous frames.
-   
-    #heat_raw[heat_raw == 0] = -5
-
-    # Now calculate an average heat map
-    if len(raw_heat_maps) > 0:
-        heat_tot = np.dstack(raw_heat_maps)
-        heat_tot = np.dstack((heat_tot, heat_raw))
-        heat_avg = np.sum(heat_tot, axis=2)
+    # Do Cummulative sum
+    if nb_summed_maps > 0:
+        heat_sum = np.add(heat_sum, heat_raw)
+        print(np.max(heat_raw[:]))
+        print(np.max(heat_sum[:]))
     else:
-        heat_avg = heat_raw
+        heat_sum = np.copy(heat_raw)
 
     # Apply threshold to help remove false positives
-    theshold = (len(raw_heat_maps) + 1) * p.heat_thresh
-    print("Max Heat: {} (Threshold: {})".format(np.max(heat_avg[:]), theshold))
-    heat = apply_threshold(heat_avg, theshold)
+    theshold = (nb_summed_maps + 1) * p.heat_thresh
+    print("Max Heat: {} (Threshold: {})".format(np.max(heat_sum[:]), theshold))
+    heat = apply_threshold(heat_sum, theshold)
     heatmap = np.clip(heat, 0, 255)
 
     # Find final boxes from heatmap using label function
@@ -766,7 +761,10 @@ def process_image_with_memory(image, p, find_windows_func, raw_heat_maps, img_na
     elapsed_time = time.time() - start
     print("Processing time: {:.1f} s".format(elapsed_time))
 
-    return (draw_img, heatmap, window_img, heat_raw, heat_avg)
+    print(np.max(heat_raw[:]))
+    print(np.max(heat_sum[:]))
+
+    return (draw_img, heatmap, window_img, heat_raw, heat_sum)
 
 
 
@@ -951,7 +949,7 @@ def run_video_pipeline(image_processing_func):
     output_video = output_dir + 'output_video.mp4'
 
     pickle_file = 'parameters.pickle'
-    force_overwrite = True
+    force_overwrite = False
     debug_plot = False
 
     if os.path.exists(pickle_file) and not force_overwrite:
@@ -998,7 +996,7 @@ def run_video_pipeline(image_processing_func):
         pickle.dump(p, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     p.heat_thresh = 20
-    p.frame_memory_length = 10
+    p.frame_memory_length = 30
     p.save_images = True
     p.xy_windows =      [[64, 64]]
     p.y_start_stops =   [[400, 656]] # Min and max in y to search in slide_window[]
@@ -1012,6 +1010,8 @@ def run_video_pipeline(image_processing_func):
     in_clip = VideoFileClip(input_video)
     nb_frames = int(in_clip.duration * in_clip.fps)
     out_images = []
+
+    heat_sum = None
     heat_map_memory = collections.deque(maxlen=p.frame_memory_length)
     for idx, frame in enumerate(in_clip.iter_frames()):
 
@@ -1020,21 +1020,35 @@ def run_video_pipeline(image_processing_func):
         output_file = 'output_images/video/project_video_images/' + filename
         cv2.imwrite(output_file, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
 
+        # If the sum has been computed over the max number of heat maps,
+        # Subtract the very map from the sum.
+        if len(heat_map_memory) >= p.frame_memory_length:
+            heat_sum = np.subtract(heat_sum, heat_map_memory[0])
+        elif len(heat_map_memory) == 0:
+            heat_sum = np.zeros_like(frame[:,:,0])
+
+        # Store a copy of the heat map
+        old_heat_sum = np.copy(heat_sum)
+
         # Process Image
         prog_percent = 100 * (idx+1) / nb_frames
+
         print("Processing Frame {}/{} {:.1f}%".format(idx+1, nb_frames, prog_percent))
-        (draw_img, heatmap, window_img, raw_heat_map, heat_avg) = \
+        (draw_img, heatmap, window_img, raw_heat_map, heat_sum) = \
             process_image_with_memory( image=frame,
                                         p=p,
                                         find_windows_func=find_windows_fast,
-                                        raw_heat_maps=heat_map_memory,
+                                        heat_sum=heat_sum,
+                                        nb_summed_maps=len(heat_map_memory),
                                         img_name="frame_{}".format(idx))
-        # Append new map to queue
+
+        # Store map in queue. The new heat_sum has been calculated during the previous
+        # operation.
         heat_map_memory.append(raw_heat_map)
 
         # Save Images to file
         if p.save_images:
-            save_images(draw_img, heatmap, heat_avg, window_img, output_dir, filename)
+            save_images(draw_img, heatmap, heat_sum, window_img, output_dir, filename)
 
         # Save Output frame
         output_file = output_dir + filename
@@ -1054,10 +1068,10 @@ def run_video_pipeline(image_processing_func):
             plt.title('Car Positions')
             plt.subplot(223)
             plt.imshow(raw_heat_map, cmap='hot')
-            plt.title('Heat Map')
+            plt.title('Current Heat Map')
             plt.subplot(224)
-            plt.imshow(heat_avg, cmap='hot')
-            plt.title('Heat Map Average')
+            plt.imshow(heat_sum, cmap='hot')
+            plt.title('Cumulative Heat Map')
             fig.tight_layout()
 
             plt.show()
