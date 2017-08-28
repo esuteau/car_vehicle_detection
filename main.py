@@ -974,7 +974,7 @@ def run_video_pipeline(image_processing_func):
         p.spatial_feat = False # Spatial features on or off
         p.hist_feat = True # Histogram features on or off
         p.hog_feat = True # HOG features on or off
-        p.transform_sqrt = True
+        p.transform_sqrt = False
         p.seed = np.random.randint(0, 100)
         p.seed = 1
         p.save_images = False
