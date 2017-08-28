@@ -38,6 +38,17 @@ def get_hog_features(img, orient, pix_per_cell, cell_per_block, transform_sqrt, 
          feature_vector=feature_vec,
          block_norm='L2-Hys')
 
+        nan_idx = np.where(np.isnan(features))
+        if len(nan_idx[0]) > 0:
+            fig = plt.figure()
+            plt.subplot(121)
+            plt.imshow(img)
+            plt.title('Image')
+            plt.subplot(122)
+            plt.imshow(hog_image)
+            plt.title('Hog Features')
+            plt.show()
+
         return features, hog_image
     # Otherwise call with one output
     else:      
@@ -118,7 +129,7 @@ def get_features_single_img(img, color_space='RGB', spatial_size=(32, 32),
                         hist_bins=32, orient=9, hist_range=(0,256),
                         pix_per_cell=8, cell_per_block=2, hog_channel=0,
                         spatial_feat=True, hist_feat=True, hog_feat=True,
-                        transform_sqrt=True): 
+                        transform_sqrt=True, vis_hog=False): 
     """Transform the input RGB image to a feature vector depending
     on the chosen input parameters"""
 
@@ -151,7 +162,7 @@ def get_features_single_img(img, color_space='RGB', spatial_size=(32, 32),
                     pix_per_cell=pix_per_cell,
                     cell_per_block=cell_per_block,
                     transform_sqrt=transform_sqrt,
-                    vis=False,
+                    vis=vis_hog,
                     feature_vec=True)
 
                 hog_features.extend(hog_feat)      
@@ -162,7 +173,7 @@ def get_features_single_img(img, color_space='RGB', spatial_size=(32, 32),
                 pix_per_cell=pix_per_cell,
                 cell_per_block=cell_per_block,
                 transform_sqrt=transform_sqrt,
-                vis=False,
+                vis=vis_hog,
                 feature_vec=True)
 
 
@@ -192,6 +203,8 @@ def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
         # Read in each one by one
         image = mpimg.imread(file)
 
+        vis_hog = False
+
         # Get Features
         file_features = get_features_single_img(
             img=image,
@@ -206,7 +219,8 @@ def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
             spatial_feat=spatial_feat,
             hist_feat=hist_feat,
             hog_feat=hog_feat,
-            transform_sqrt=transform_sqrt)
+            transform_sqrt=transform_sqrt,
+            vis_hog=vis_hog)
 
         features.append(file_features)
 
@@ -305,6 +319,14 @@ def run_feature_extraction(cars, notcars, p):
 
 def prepare_features(car_features, notcar_features):
     """Reshape feature to build X and Y arrays, ready for the classifier"""
+
+    # Check that there are no nan values
+    idx_to_remove = []
+    for f in range(len(car_features)):
+        nan_idx = np.where(np.isnan(car_features[f]))
+        if len(nan_idx[0]) > 0:
+            idx_to_remove.append(f)
+
     # Create an array stack of feature vectors
     X = np.vstack((car_features, notcar_features)).astype(np.float64)  
 
@@ -974,7 +996,7 @@ def run_video_pipeline(image_processing_func):
         p.spatial_feat = False # Spatial features on or off
         p.hist_feat = True # Histogram features on or off
         p.hog_feat = True # HOG features on or off
-        p.transform_sqrt = True
+        p.transform_sqrt = False
         p.seed = np.random.randint(0, 100)
         p.seed = 1
         p.save_images = False
