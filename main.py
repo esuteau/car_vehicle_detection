@@ -964,7 +964,7 @@ def run_video_pipeline(image_processing_func):
     output_video = output_dir + 'output_video.mp4'
 
     pickle_file = 'parameters.pickle'
-    force_overwrite = True
+    force_overwrite = False
     debug_plot = False
 
     if os.path.exists(pickle_file) and not force_overwrite:
@@ -1010,7 +1010,7 @@ def run_video_pipeline(image_processing_func):
     with open(pickle_file, 'wb') as handle:
         pickle.dump(p, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    p.heat_thresh = 20
+    p.heat_thresh = 15
     p.frame_memory_length = 30
     p.save_images = True
     p.xy_windows =      [[64, 64]]
