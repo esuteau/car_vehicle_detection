@@ -1010,7 +1010,7 @@ def run_video_pipeline(image_processing_func):
     with open(pickle_file, 'wb') as handle:
         pickle.dump(p, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    p.heat_thresh = 15
+    p.heat_thresh = 10
     p.frame_memory_length = 30
     p.save_images = True
     p.xy_windows =      [[64, 64]]
