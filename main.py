@@ -518,9 +518,26 @@ def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, N
     # This will allow to play with the parameters and iterate at a much faster pace to find the right combination
     output_folder = 'temp_save/'
     create_folder(output_folder)
-    save_name = output_folder + '{}_windows_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}.p'.format(
-        img_name, hog_channel, orient, pix_per_cell, cell_per_block, xy_window[0], color_space, spatial_size[0],
-        x_start_stop[0], x_start_stop[1], y_start_stop[0], y_start_stop[1])
+    save_name = output_folder + \
+    "{}_windows_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}.p".format(
+            img_name,
+            xy_window[0],
+            x_start_stop[0],
+            x_start_stop[1],
+            y_start_stop[0],
+            y_start_stop[1],
+            color_space,
+            orient,
+            pix_per_cell ,
+            cell_per_block,
+            hog_channel,
+            spatial_size[0],
+            hist_bins,
+            hist_range[0],
+            hist_range[1],
+            spatial_feat,
+            hist_feat,
+            hog_feat)
 
     if os.path.exists(save_name):
         with open(save_name, 'rb') as handle:
@@ -743,8 +760,6 @@ def process_image_with_memory(image, p, find_windows_func, heat_sum, nb_summed_m
     # Do Cummulative sum
     if nb_summed_maps > 0:
         heat_sum = np.add(heat_sum, heat_raw)
-        print(np.max(heat_raw[:]))
-        print(np.max(heat_sum[:]))
     else:
         heat_sum = np.copy(heat_raw)
 
@@ -760,9 +775,6 @@ def process_image_with_memory(image, p, find_windows_func, heat_sum, nb_summed_m
 
     elapsed_time = time.time() - start
     print("Processing time: {:.1f} s".format(elapsed_time))
-
-    print(np.max(heat_raw[:]))
-    print(np.max(heat_sum[:]))
 
     return (draw_img, heatmap, window_img, heat_raw, heat_sum)
 
@@ -834,6 +846,9 @@ def save_images(draw_img, heatmap, heat_avg, window_img, output_folder, filename
     # Save Images to file
     window_img_bgr = cv2.cvtColor(window_img, cv2.COLOR_RGB2BGR)
     draw_img_bgr = cv2.cvtColor(draw_img, cv2.COLOR_RGB2BGR)
+
+    # Rescale the Heat Average
+    heat_avg = np.copy(heat_avg) / 1500.0
     heat_avg = np.clip(heat_avg, 0, 255).astype(np.uint8)
     heatmap = heatmap.astype(np.uint8)
     
@@ -949,7 +964,7 @@ def run_video_pipeline(image_processing_func):
     output_video = output_dir + 'output_video.mp4'
 
     pickle_file = 'parameters.pickle'
-    force_overwrite = False
+    force_overwrite = True
     debug_plot = False
 
     if os.path.exists(pickle_file) and not force_overwrite:
@@ -969,7 +984,7 @@ def run_video_pipeline(image_processing_func):
         p.spatial_size = (32, 32) # Spatial binning dimensions
         p.hist_bins = 32    # Number of histogram bins
         p.hist_range = (0.0, 1.0)
-        p.spatial_feat = False # Spatial features on or off
+        p.spatial_feat = True # Spatial features on or off
         p.hist_feat = True # Histogram features on or off
         p.hog_feat = True # HOG features on or off
         p.transform_sqrt = False
