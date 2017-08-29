@@ -540,9 +540,26 @@ def find_cars(img, svc, scaler, x_start_stop=[None, None], y_start_stop=[None, N
     # This will allow to play with the parameters and iterate at a much faster pace to find the right combination
     output_folder = 'temp_save/'
     create_folder(output_folder)
-    save_name = output_folder + '{}_windows_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}.p'.format(
-        img_name, hog_channel, orient, pix_per_cell, cell_per_block, xy_window[0], color_space, spatial_size[0],
-        x_start_stop[0], x_start_stop[1], y_start_stop[0], y_start_stop[1])
+    save_name = output_folder + \
+    "{}_windows_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}.p".format(
+            img_name,
+            xy_window[0],
+            x_start_stop[0],
+            x_start_stop[1],
+            y_start_stop[0],
+            y_start_stop[1],
+            color_space,
+            orient,
+            pix_per_cell ,
+            cell_per_block,
+            hog_channel,
+            spatial_size[0],
+            hist_bins,
+            hist_range[0],
+            hist_range[1],
+            spatial_feat,
+            hist_feat,
+            hog_feat)
 
     if os.path.exists(save_name):
         with open(save_name, 'rb') as handle:
@@ -673,9 +690,10 @@ def add_heat(heatmap, bbox_list):
     
 def apply_threshold(heatmap, threshold):
     # Zero out pixels below the threshold
-    heatmap[heatmap <= threshold] = 0
+    heat_thres = np.copy(heatmap)
+    heat_thres[heat_thres <= threshold] = 0
     # Return thresholded map
-    return heatmap
+    return heat_thres
 
 def draw_labeled_bboxes(img, labels, color, thickness):
     # Iterate through all detected cars
@@ -735,7 +753,7 @@ def process_image(image, p, find_windows_func):
 
 
 
-def process_image_with_memory(image, p, find_windows_func, raw_heat_maps, img_name):
+def process_image_with_memory(image, p, find_windows_func, heat_sum, nb_summed_maps, img_name):
     # Same image processing as above, but with memory, i.e. we combine
     # heatmaps from previous frames, calculate the average heatmap
     # and threshold the average result.
@@ -761,24 +779,16 @@ def process_image_with_memory(image, p, find_windows_func, raw_heat_maps, img_na
     heat_raw = np.zeros_like(image[:,:,0]).astype(np.float)
     heat_raw = add_heat(heat_raw,hot_windows)
 
-    # Now that we have detected the current heat map, we are going to use memory to detect which blobs should be worth considering.
-    # Instead of combining the current frame with the X previous ones and doing an average, we are going to use the X previous frames to
-    # define which blobs to keep in the current frame. To do that will penalize areas where not blobs were detected in the previous frames.
-   
-    #heat_raw[heat_raw == 0] = -5
-
-    # Now calculate an average heat map
-    if len(raw_heat_maps) > 0:
-        heat_tot = np.dstack(raw_heat_maps)
-        heat_tot = np.dstack((heat_tot, heat_raw))
-        heat_avg = np.sum(heat_tot, axis=2)
+    # Do Cummulative sum
+    if nb_summed_maps > 0:
+        heat_sum = np.add(heat_sum, heat_raw)
     else:
-        heat_avg = heat_raw
+        heat_sum = np.copy(heat_raw)
 
     # Apply threshold to help remove false positives
-    theshold = (len(raw_heat_maps) + 1) * p.heat_thresh
-    print("Max Heat: {} (Threshold: {})".format(np.max(heat_avg[:]), theshold))
-    heat = apply_threshold(heat_avg, theshold)
+    theshold = (nb_summed_maps + 1) * p.heat_thresh
+    print("Max Heat: {} (Threshold: {})".format(np.max(heat_sum[:]), theshold))
+    heat = apply_threshold(heat_sum, theshold)
     heatmap = np.clip(heat, 0, 255)
 
     # Find final boxes from heatmap using label function
@@ -788,7 +798,7 @@ def process_image_with_memory(image, p, find_windows_func, raw_heat_maps, img_na
     elapsed_time = time.time() - start
     print("Processing time: {:.1f} s".format(elapsed_time))
 
-    return (draw_img, heatmap, window_img, heat_raw, heat_avg)
+    return (draw_img, heatmap, window_img, heat_raw, heat_sum)
 
 
 
@@ -858,6 +868,9 @@ def save_images(draw_img, heatmap, heat_avg, window_img, output_folder, filename
     # Save Images to file
     window_img_bgr = cv2.cvtColor(window_img, cv2.COLOR_RGB2BGR)
     draw_img_bgr = cv2.cvtColor(draw_img, cv2.COLOR_RGB2BGR)
+
+    # Rescale the Heat Average
+    heat_avg = np.copy(heat_avg) / 1500.0
     heat_avg = np.clip(heat_avg, 0, 255).astype(np.uint8)
     heatmap = heatmap.astype(np.uint8)
     
@@ -973,7 +986,7 @@ def run_video_pipeline(image_processing_func):
     output_video = output_dir + 'output_video.mp4'
 
     pickle_file = 'parameters.pickle'
-    force_overwrite = True
+    force_overwrite = False
     debug_plot = False
 
     if os.path.exists(pickle_file) and not force_overwrite:
@@ -993,7 +1006,7 @@ def run_video_pipeline(image_processing_func):
         p.spatial_size = (32, 32) # Spatial binning dimensions
         p.hist_bins = 32    # Number of histogram bins
         p.hist_range = (0.0, 1.0)
-        p.spatial_feat = False # Spatial features on or off
+        p.spatial_feat = True # Spatial features on or off
         p.hist_feat = True # Histogram features on or off
         p.hog_feat = True # HOG features on or off
         p.transform_sqrt = False
@@ -1019,8 +1032,8 @@ def run_video_pipeline(image_processing_func):
     with open(pickle_file, 'wb') as handle:
         pickle.dump(p, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    p.heat_thresh = 20
-    p.frame_memory_length = 10
+    p.heat_thresh = 10
+    p.frame_memory_length = 30
     p.save_images = True
     p.xy_windows =      [[64, 64]]
     p.y_start_stops =   [[400, 656]] # Min and max in y to search in slide_window[]
@@ -1034,6 +1047,8 @@ def run_video_pipeline(image_processing_func):
     in_clip = VideoFileClip(input_video)
     nb_frames = int(in_clip.duration * in_clip.fps)
     out_images = []
+
+    heat_sum = None
     heat_map_memory = collections.deque(maxlen=p.frame_memory_length)
     for idx, frame in enumerate(in_clip.iter_frames()):
 
@@ -1042,20 +1057,35 @@ def run_video_pipeline(image_processing_func):
         output_file = 'output_images/video/project_video_images/' + filename
         cv2.imwrite(output_file, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
 
+        # If the sum has been computed over the max number of heat maps,
+        # Subtract the very map from the sum.
+        if len(heat_map_memory) >= p.frame_memory_length:
+            heat_sum = np.subtract(heat_sum, heat_map_memory[0])
+        elif len(heat_map_memory) == 0:
+            heat_sum = np.zeros_like(frame[:,:,0])
+
+        # Store a copy of the heat map
+        old_heat_sum = np.copy(heat_sum)
+
         # Process Image
         prog_percent = 100 * (idx+1) / nb_frames
+
         print("Processing Frame {}/{} {:.1f}%".format(idx+1, nb_frames, prog_percent))
-        (draw_img, heatmap, window_img, raw_heat_map, heat_avg) = process_image_with_memory(image=frame,
-                                                                                            p=p,
-                                                                                            find_windows_func=find_windows_fast,
-                                                                                            raw_heat_maps=heat_map_memory,
-                                                                                            img_name="frame_{}".format(idx))
-        # Append new map to queue
+        (draw_img, heatmap, window_img, raw_heat_map, heat_sum) = \
+            process_image_with_memory( image=frame,
+                                        p=p,
+                                        find_windows_func=find_windows_fast,
+                                        heat_sum=heat_sum,
+                                        nb_summed_maps=len(heat_map_memory),
+                                        img_name="frame_{}".format(idx))
+
+        # Store map in queue. The new heat_sum has been calculated during the previous
+        # operation.
         heat_map_memory.append(raw_heat_map)
 
         # Save Images to file
         if p.save_images:
-            save_images(draw_img, heatmap, heat_avg, window_img, output_dir, filename)
+            save_images(draw_img, heatmap, heat_sum, window_img, output_dir, filename)
 
         # Save Output frame
         output_file = output_dir + filename
@@ -1075,10 +1105,10 @@ def run_video_pipeline(image_processing_func):
             plt.title('Car Positions')
             plt.subplot(223)
             plt.imshow(raw_heat_map, cmap='hot')
-            plt.title('Heat Map')
+            plt.title('Current Heat Map')
             plt.subplot(224)
-            plt.imshow(heat_avg, cmap='hot')
-            plt.title('Heat Map Average')
+            plt.imshow(heat_sum, cmap='hot')
+            plt.title('Cumulative Heat Map')
             fig.tight_layout()
 
             plt.show()
