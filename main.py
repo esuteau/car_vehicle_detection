@@ -986,7 +986,7 @@ def run_video_pipeline(image_processing_func):
     output_video = output_dir + 'output_video.mp4'
 
     pickle_file = 'parameters.pickle'
-    force_overwrite = False
+    force_overwrite = True
     debug_plot = False
 
     if os.path.exists(pickle_file) and not force_overwrite:
@@ -1016,14 +1016,15 @@ def run_video_pipeline(image_processing_func):
 
         # Parameters for Vehicle detection
         p.xy_windows =      [[64, 64]]
-        p.y_start_stops =   [[350, 656]] # Min and max in y to search in slide_window[]
+        p.y_start_stops =   [[400, 656]] # Min and max in y to search in slide_window[]
         p.x_start_stops =   [[None, None]]
         p.xy_overlap=(0.9, 0.9)
         p.color = (0, 0, 255)
         p.thick = 3
-        p.heat_thresh = 15
+        p.heat_thresh = 10
         p.is_input_jpg = True
-        p.frame_memory_length = 40
+        p.frame_memory_length = 30
+        p.save_images = True
 
         # Train a classifier on labels images.
         (p.svc, p.X_scaler) = run_classifier(p)
@@ -1031,17 +1032,6 @@ def run_video_pipeline(image_processing_func):
     # Save to file (So that we don't have to train every single time)
     with open(pickle_file, 'wb') as handle:
         pickle.dump(p, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    p.heat_thresh = 10
-    p.frame_memory_length = 30
-    p.save_images = True
-    p.xy_windows =      [[64, 64]]
-    p.y_start_stops =   [[400, 656]] # Min and max in y to search in slide_window[]
-    p.x_start_stops =   [[None, None]]
-    # p.xy_windows =      [[128, 128], [64, 64]]
-    # p.y_start_stops =   [[400, None],  [400, None]] # Min and max in y to search in slide_window[]
-    # p.x_start_stops =   [[None, None],  [350, None]]
-
 
     # Load Video
     in_clip = VideoFileClip(input_video)
