@@ -384,14 +384,6 @@ def run_classifier(p):
     # Validate classifier on Test set. Print accuracy
     print('Test Accuracy of SVC = ', round(svc.score(X_test, y_test), 4))
 
-    # # Check the prediction time on the test set
-    # t=time.time()
-    # n_predict = len(X_test)
-    # print('My SVC predicts: ', svc.predict(X_test[0:n_predict]))
-    # print('For these',n_predict, 'labels: ', y_test[0:n_predict])
-    # t2 = time.time()
-    # print(round(t2-t, 5), 'Seconds to predict', n_predict,'labels with SVC')
-
     return (svc, X_scaler)
 
 
